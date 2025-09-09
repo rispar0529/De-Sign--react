@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { documentAPI } from '../services/api';
 
@@ -8,13 +8,25 @@ const Meeting = () => {
   const { sessionId, filename } = location.state || {};
   
   const [meetingDate, setMeetingDate] = useState('');
+  const [emailAddress, setEmailAddress] = useState(''); // 🆕 Add email input
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/upload');
+    }
+  }, [sessionId, navigate]);
+
   const handleScheduleMeeting = async () => {
     if (!meetingDate) {
       setError('Please select a meeting date and time');
+      return;
+    }
+    
+    if (!emailAddress) { // 🆕 Validate email input
+      setError('Please enter an email address for notifications');
       return;
     }
 
@@ -22,17 +34,27 @@ const Meeting = () => {
     setError('');
 
     try {
-      const response = await documentAPI.provideInput(sessionId, { meeting_date: meetingDate });
+      console.log('Scheduling meeting with:', { meetingDate, emailAddress });
       
+      const response = await documentAPI.provideInput(sessionId, { 
+        meeting_date: meetingDate,
+        notification_email: emailAddress  // 🆕 Send email address
+      });
+
       if (response.data.workflow_complete) {
-        setSuccess(true);
-        setTimeout(() => {
-          navigate('/upload');
-        }, 3000);
+        if (response.data.final_status === 'SUCCESS') {
+          setSuccess(true);
+          setTimeout(() => navigate('/upload'), 3000);
+        } else {
+          setError(`Meeting scheduling failed: ${response.data.error || response.data.message || 'Unknown error'}`);
+        }
+      } else if (response.data.error) {
+        setError(response.data.error);
       } else {
-        setError('Meeting scheduling failed');
+        setError('Meeting scheduling incomplete - workflow still processing');
       }
     } catch (error) {
+      console.error('Meeting scheduling error:', error);
       setError(error.response?.data?.error || 'Meeting scheduling failed');
     } finally {
       setLoading(false);
@@ -45,88 +67,62 @@ const Meeting = () => {
 
   if (success) {
     return (
-      <div style={{ maxWidth: '600px', margin: '100px auto', padding: '20px', textAlign: 'center' }}>
-        <div style={{ backgroundColor: '#d4edda', border: '1px solid #c3e6cb', padding: '20px', borderRadius: '5px' }}>
-          <h2 style={{ color: '#155724' }}>✓ Success!</h2>
-          <p>Meeting scheduled successfully for {new Date(meetingDate).toLocaleDateString()} at {new Date(meetingDate).toLocaleTimeString()}</p>
-          <p>Contract processing workflow completed.</p>
-          <p>Redirecting to upload page...</p>
-        </div>
+      <div className="success-container">
+        <h2>✅ Success!</h2>
+        <p>Meeting scheduled successfully for {new Date(meetingDate).toLocaleDateString()} at {new Date(meetingDate).toLocaleTimeString()}</p>
+        <p>📧 <strong>Confirmation email has been sent to {emailAddress}</strong></p>
+        <p>Contract processing workflow completed.</p>
+        <p>Redirecting to upload page...</p>
       </div>
     );
   }
 
   return (
-    <div style={{ maxWidth: '600px', margin: '50px auto', padding: '20px' }}>
-      <h2>Schedule Meeting - {filename}</h2>
+    <div className="meeting-container">
+      <h2>📅 Schedule Meeting</h2>
+      <p><strong>File:</strong> {filename}</p>
       <p>Your contract has been approved. Please schedule a meeting to finalize the process.</p>
-
-      <div style={{ marginBottom: '20px' }}>
-        <label style={{ display: 'block', marginBottom: '10px', fontSize: '16px' }}>
-          Select Meeting Date & Time:
-        </label>
+      
+      {error && <div className="error-message">❌ {error}</div>}
+      
+      <div className="meeting-form">
+        <label htmlFor="meetingDate">Select Meeting Date and Time:</label>
         <input
           type="datetime-local"
+          id="meetingDate"
           value={meetingDate}
           onChange={(e) => setMeetingDate(e.target.value)}
           min={new Date().toISOString().slice(0, 16)}
-          style={{
-            width: '100%',
-            padding: '12px',
-            fontSize: '16px',
-            border: '1px solid #ddd',
-            borderRadius: '4px'
-          }}
+          required
         />
-      </div>
-
-      {error && (
-        <div style={{ color: 'red', padding: '10px', backgroundColor: '#f8d7da', border: '1px solid #f5c6cb', marginBottom: '20px' }}>
-          {error}
+        
+        {/* 🆕 Add email input field */}
+        <label htmlFor="emailAddress">Email Address for Confirmation:</label>
+        <input
+          type="email"
+          id="emailAddress"
+          value={emailAddress}
+          onChange={(e) => setEmailAddress(e.target.value)}
+          placeholder="recipient@example.com"
+          required
+        />
+        
+        <div className="meeting-actions">
+          <button 
+            onClick={handleScheduleMeeting}
+            disabled={loading || !meetingDate || !emailAddress}
+            className="schedule-btn"
+          >
+            {loading ? 'Scheduling...' : 'Schedule Meeting & Send Email'}
+          </button>
+          
+          <button 
+            onClick={handleBackToUpload}
+            className="back-btn"
+          >
+            Back to Upload
+          </button>
         </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '15px' }}>
-        <button
-          onClick={handleScheduleMeeting}
-          disabled={loading || !meetingDate}
-          style={{
-            flex: 1,
-            padding: '15px',
-            backgroundColor: loading ? '#6c757d' : '#28a745',
-            color: 'white',
-            border: 'none',
-            cursor: loading || !meetingDate ? 'not-allowed' : 'pointer',
-            fontSize: '16px'
-          }}
-        >
-          {loading ? 'Scheduling...' : 'Schedule Meeting'}
-        </button>
-
-        <button
-          onClick={handleBackToUpload}
-          style={{
-            flex: 1,
-            padding: '15px',
-            backgroundColor: '#6c757d',
-            color: 'white',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '16px'
-          }}
-        >
-          Back to Upload
-        </button>
-      </div>
-
-      <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6' }}>
-        <h4>Next Steps:</h4>
-        <ul>
-          <li>Meeting will be scheduled with relevant stakeholders</li>
-          <li>Contract details will be reviewed in the meeting</li>
-          <li>Final signing process will be completed</li>
-          <li>You will receive confirmation via email</li>
-        </ul>
       </div>
     </div>
   );
